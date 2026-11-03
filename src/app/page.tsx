@@ -31,7 +31,7 @@ export default function WheelPage() {
         if (Array.isArray(data.names)) setNames(data.names)
         if (Array.isArray(data.winners)) setWinners(data.winners)
       } catch {}
-    } catch {}
+    }
   }, [])
 
   useEffect(() => {
@@ -206,7 +206,7 @@ export default function WheelPage() {
                         {new Date(w.at).toLocaleTimeString()}
                       </span>
                     </div>
-                  ))}
+                  )))}
               </div>
             </section>
 
@@ -242,7 +242,7 @@ export default function WheelPage() {
           <span aria-hidden="true">·</span>
           <span>Your names stay on this device</span>
         </div>
-      </footer
+      </footer>
 
       <WinnerDialog
         open={dialogOpen}
@@ -255,8 +255,4 @@ export default function WheelPage() {
       />
     </div>
   )
-}
-
-export default function WheelPage() {
-  return <WheelPage />
 }

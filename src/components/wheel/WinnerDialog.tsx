@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import confetti from "canvas-confetti"
 import {
   Dialog,
@@ -30,6 +30,7 @@ interface WinnerDialogProps {
   onSpinAgain: () => void
   onRemoveAndSpin: () => void
   onClose: () => void
+  justWon?: boolean // Only fire confetti on actual win, not just dialog open
 }
 
 export function WinnerDialog({
@@ -39,9 +40,14 @@ export function WinnerDialog({
   onSpinAgain,
   onRemoveAndSpin,
   onClose,
+  justWon = false,
 }: WinnerDialogProps) {
+  const hasFired = useRef(false)
+
   useEffect(() => {
-    if (!open || !winner) return
+    if (!open || !winner || !justWon || hasFired.current) return
+    hasFired.current = true
+
     const fire = () => {
       confetti({
         particleCount: 90,
@@ -68,7 +74,7 @@ export function WinnerDialog({
     fire()
     const again = setTimeout(fire, 650)
     return () => clearTimeout(again)
-  }, [open, winner])
+  }, [open, winner, justWon])
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -93,7 +99,7 @@ export function WinnerDialog({
               onClick={onRemoveAndSpin}
             >
               <UserMinus className="size-4" />
-              Remove winner &amp; spin again
+              Remove winner & spin again
             </Button>
           )}
           <Button

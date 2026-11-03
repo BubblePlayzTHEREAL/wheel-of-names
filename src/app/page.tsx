@@ -1,475 +1,262 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useTheme } from "next-themes"
-import { Wheel, type WheelHandle } from "@/components/wheel/Wheel"
-import NameManager from "@/components/wheel/NameManager"
-import WinnerDialog from "@/components/wheel/WinnerDialog"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { useToast } from "@/hooks/use-toast"
-import { playFanfare } from "@/lib/wheel-sounds"
-import {
-  Disc3,
-  History,
-  Loader2,
-  Maximize,
-  Minimize,
-  Moon,
-  Play,
-  Sun,
-  Trash2,
-  Volume2,
-  VolumeX,
-} from "lucide-react"
+import { WinnerDialog } from "@/components/wheel/WinnerDialog"
+import { NameManager } from "@/components/wheel/NameManager"
+import { cn } from "@/lib/utils"
 
-const STORAGE_KEY = "wheel-of-names:v1"
-
-interface WinnerEntry {
+export interface WinnerEntry {
   name: string
   at: number
 }
 
-interface StoredState {
-  names?: unknown
-  winners?: unknown
-  soundOn?: unknown
-  idleSpin?: unknown
-}
-
-function loadState(): StoredState {
-  if (typeof window === "undefined") return {}
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as StoredState) : {}
-  } catch {
-    return {}
-  }
-}
-
-export default function Home() {
-  const { resolvedTheme, setTheme } = useTheme()
-  const { toast } = useToast()
-
+export default function WheelPage() {
   const [names, setNames] = useState<string[]>([])
   const [winners, setWinners] = useState<WinnerEntry[]>([])
-  const [soundOn, setSoundOn] = useState(true)
-  const [idleSpin, setIdleSpin] = useState(true)
-  const [hydrated, setHydrated] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const [spinning, setSpinning] = useState(false)
   const [winner, setWinner] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [spinning, setSpinning] = useState(false)
+  const [idleSpin, setIdleSpin] = useState(true)
+  const [soundOn, setSoundOn] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [theme, setTheme] = useState<"system" | "light" | "dark">("system")
+  const [justWon, setJustWon] = useState(false)
 
-  const wheelApiRef = useRef<WheelHandle | null>(null)
-  // Mirror of names for synchronous reads inside callbacks (event handlers
-  // run once, so computing here is StrictMode-safe unlike state updaters).
-  const namesRef = useRef<string[]>([])
+  // Persist names and winners
   useEffect(() => {
-    namesRef.current = names
+    const stored = localStorage.getItem("wheel-of-names")
+    if (stored) {
+      try {
+        const data = JSON.parse(stored)
+        if (Array.isArray(data.names)) setNames(data.names)
+        if (Array.isArray(data.winners)) setWinners(data.winners)
+      } catch {}
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(
+      "wheel-of-names",
+      JSON.stringify({ names, winners: winners.slice(0, 30) })
+    )
+  }, [names, winners])
+
+  const spin = useCallback(() => {
+    if (names.length === 0) return
+    const idx = Math.floor(Math.random() * names.length)
+    const w = names[idx]
+    setWinner(w)
+    setDialogOpen(true)
+    setJustWon(true) // Flag to trigger confetti
   }, [names])
 
-  // ---- persistence -------------------------------------------------------------------
-  // Seed React state from localStorage after mount (client-only data source).
-  // The seeding runs as a microtask so state updates happen outside the effect
-  // body itself, while SSR output stays deterministic (empty wheel).
-  useEffect(() => {
-    let cancelled = false
-    queueMicrotask(() => {
-      if (cancelled) return
-      const stored = loadState()
-      if (Array.isArray(stored.names)) {
-        setNames(
-          stored.names.filter(
-            (n): n is string => typeof n === "string" && n.trim().length > 0
-          )
-        )
+  const spinAgain = () => {
+    setDialogOpen(false)
+    // Use setTimeout to ensure dialog closes before next spin
+    setTimeout(() => {
+      if (names.length > 0) {
+        const idx = Math.floor(Math.random() * names.length)
+        const w = names[idx]
+        setWinner(w)
+        setDialogOpen(true)
+        setJustWon(true)
       }
-      if (Array.isArray(stored.winners)) {
-        const list = stored.winners.filter(
-          (w): w is WinnerEntry =>
-            typeof w === "object" &&
-            w !== null &&
-            typeof (w as WinnerEntry).name === "string" &&
-            typeof (w as WinnerEntry).at === "number"
-        )
-        setWinners(list.slice(0, 50))
-      }
-      if (typeof stored.soundOn === "boolean") setSoundOn(stored.soundOn)
-      if (typeof stored.idleSpin === "boolean") setIdleSpin(stored.idleSpin)
-      setHydrated(true)
-      setMounted(true)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    }, 100)
+  }
 
-  useEffect(() => {
-    if (!hydrated || typeof window === "undefined") return
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          names,
-          winners: winners.slice(0, 50),
-          soundOn,
-          idleSpin,
-        })
-      )
-    } catch {
-      // storage full or blocked — keep the app usable anyway
-    }
-  }, [names, winners, soundOn, idleSpin, hydrated])
-
-  // ---- fullscreen --------------------------------------------------------------------
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement))
-    document.addEventListener("fullscreenchange", onChange)
-    return () => document.removeEventListener("fullscreenchange", onChange)
-  }, [])
-
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-    } else {
-      void document.documentElement
-        .requestFullscreen()
-        .catch(() => toast({ description: "Fullscreen is not available." }))
+  const removeWinnerAndSpin = () => {
+    if (winner) {
+      setNames((prev) => prev.filter((n) => n !== winner))
+      setWinner(null)
+      setDialogOpen(false)
+      setJustWon(false)
+      // Auto-spin again
+      setTimeout(() => {
+        if (names.length > 1) {
+          const idx = Math.floor(Math.random() * (names.length - 1))
+          const filtered = names.filter((n) => n !== winner)
+          const w = filtered[idx]
+          setWinner(w)
+          setDialogOpen(true)
+          setJustWon(true)
+        }
+      }, 100)
     }
   }
 
-  // ---- name operations -----------------------------------------------------------------
-  const addName = useCallback(
-    (name: string): boolean => {
-      const value = name.trim().slice(0, 60)
-      if (!value) return false
-      if (
-        namesRef.current.some((n) => n.toLowerCase() === value.toLowerCase())
-      ) {
-        toast({ description: `${value} is already on the wheel.` })
-        return false
-      }
-      namesRef.current = [...namesRef.current, value]
-      setNames(namesRef.current)
-      toast({ description: `${value} joined the wheel.` })
-      return true
-    },
-    [toast]
-  )
-
-  const removeName = useCallback((index: number) => {
-    setNames((prev) => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const importNames = useCallback(
-    (list: string[]): number => {
-      const seen = new Set(namesRef.current.map((n) => n.toLowerCase()))
-      const additions: string[] = []
-      for (const raw of list) {
-        const value = raw.trim().slice(0, 60)
-        if (!value) continue
-        const key = value.toLowerCase()
-        if (seen.has(key)) continue
-        seen.add(key)
-        additions.push(value)
-      }
-      if (additions.length > 0) {
-        namesRef.current = [...namesRef.current, ...additions]
-        setNames(namesRef.current)
-      }
-      toast({
-        description:
-          additions.length > 0
-            ? `Added ${additions.length} name${additions.length === 1 ? "" : "s"} to the wheel.`
-            : "No new names found — they're all already on the wheel.",
-      })
-      return additions.length
-    },
-    [toast]
-  )
-
-  const shuffleNames = useCallback(() => {
-    setNames((prev) => {
-      const next = [...prev]
-      for (let i = next.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1))
-        ;[next[i], next[j]] = [next[j], next[i]]
-      }
-      return next
-    })
-  }, [])
-
-  const sortNames = useCallback(() => {
-    setNames((prev) =>
-      [...prev].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-    )
-  }, [])
-
-  const clearNames = useCallback(() => {
-    setNames([])
-    toast({ description: "Wheel cleared." })
-  }, [toast])
-
-  // ---- spinning -------------------------------------------------------------------------
-  const startSpin = useCallback(() => {
-    wheelApiRef.current?.spin()
-  }, [])
-
-  const handleSpinEnd = useCallback(
-    (w: string) => {
-      setWinners((prev) => [{ name: w, at: Date.now() }, ...prev].slice(0, 50))
-      setWinner(w)
-      setDialogOpen(true)
-      if (soundOn) playFanfare()
-    },
-    [soundOn]
-  )
-
-  const spinAgain = useCallback(() => {
-    setDialogOpen(false)
-    window.setTimeout(startSpin, 180)
-  }, [startSpin])
-
-  const removeWinnerAndSpin = useCallback(() => {
-    const current = namesRef.current
-    namesRef.current = current.filter((n) => n !== winner)
-    setNames(namesRef.current)
-    setDialogOpen(false)
-    window.setTimeout(startSpin, 220)
-  }, [winner, startSpin])
-
-  // Space to spin (when not typing)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space") return
-      const target = e.target as HTMLElement | null
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return
-      }
-      if (spinning || dialogOpen || names.length === 0) return
-      e.preventDefault()
-      startSpin()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [spinning, dialogOpen, names.length, startSpin])
-
-  // Removing the winner only makes sense if another distinct name remains.
-  const canRemoveWinner = names.some((n) => n !== winner)
-
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-rose-500 via-orange-500 to-amber-500 text-white shadow-md">
-              <Disc3 className="size-5" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-bold leading-tight">
-                Wheel of Names
-              </h1>
-              <p className="hidden text-xs text-muted-foreground sm:block">
-                Fair and random picks, every spin
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
+    <div className={cn("min-h-screen flex flex-col", theme === "dark" ? "dark" : "")}>
+      <header className="border-b sticky top-0 z-10 backdrop-blur-md bg-background/80">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-4">
+          <h1 className="font-display text-2xl font-bold tracking-tight">Wheel of Names</h1>
+          <div className="flex items-center gap-2">
+            <button
               onClick={() => setSoundOn((s) => !s)}
-              aria-label={soundOn ? "Mute sounds" : "Unmute sounds"}
-              title={soundOn ? "Mute sounds" : "Unmute sounds"}
+              className="p-2 rounded-lg hover:bg-accent/10"
+              aria-label={soundOn ? "Mute sounds" : "Enable sounds"}
             >
-              {soundOn ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-              aria-label="Toggle dark mode"
-              title="Toggle dark mode"
+              {soundOn ? "🔊" : "🔇"}
+            </button>
+            <button
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : t === "light" ? "system" : "dark"))}
+              className="p-2 rounded-lg hover:bg-accent/10"
+              aria-label="Toggle theme"
             >
-              {mounted && resolvedTheme === "dark" ? (
-                <Sun className="size-5" />
-              ) : (
-                <Moon className="size-5" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFullscreen}
-              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              {theme === "dark" ? "🌙" : theme === "light" ? "☀️" : "💻"}
+            </button>
+            <button
+              onClick={() => {
+                setFullscreen((f) => !f)
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen()
+                } else {
+                  document.exitFullscreen()
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-accent/10"
+              aria-label="Toggle fullscreen"
             >
-              {isFullscreen ? (
-                <Minimize className="size-5" />
-              ) : (
-                <Maximize className="size-5" />
-              )}
-            </Button>
+              ⛶
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
-          {/* wheel column */}
-          <Card className="min-w-0 overflow-hidden">
-            <CardContent className="p-4 pb-6 pt-6 sm:p-8">
-              <Wheel
-                names={names}
-                soundOn={soundOn}
-                idleSpin={idleSpin && !spinning}
-                spinning={spinning}
-                onSpinningChange={setSpinning}
-                onSpinEnd={handleSpinEnd}
-                apiRef={wheelApiRef}
+      <main className="flex-1 mx-auto max-w-6xl w-full px-4 py-6 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-[1fr_340px] gap-6">
+          {/* Left: Wheel */}
+          <section className="flex flex-col items-center">
+            <div className="relative mx-auto aspect-square w-full max-w-[560px] select-none cursor-pointer"
+              onClick={() => {
+                if (names.length > 0 && !spinning) {
+                  spin()
+                }
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && names.length > 0 && !spinning) {
+                  e.preventDefault()
+                  spin()
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={names.length === 0 ? "Wheel is empty, add names first" : "Spin the wheel to pick a random name"}
+            >
+              <canvas
+                ref={(el) => { wheelCanvasRef.current = el }}
+                className="block h-full w-full"
               />
-              <div className="mt-8 flex flex-col items-center gap-3">
-                <Button
-                  size="lg"
-                  disabled={spinning || names.length === 0}
-                  onClick={startSpin}
-                  aria-label="Spin the wheel"
-                  className="h-14 rounded-full bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 px-12 text-base font-extrabold tracking-widest text-white shadow-lg transition-transform hover:scale-[1.03] active:scale-[0.98] disabled:hover:scale-100"
-                >
-                  {spinning ? (
-                    <>
-                      <Loader2 className="size-5 animate-spin" />
-                      Spinning…
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-5" />
-                      SPIN
-                    </>
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Click the wheel or press{" "}
-                  <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                    Space
-                  </kbd>{" "}
-                  to spin
-                </p>
+              {/* pointer at 12 o'clock */}
+              <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1 drop-shadow-md">
+                <svg width="44" height="60" viewBox="0 0 44 60" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="ptr" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#fde047" />
+                      <stop offset="100%" stopColor="#f59e0b" />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d="M22 58 L6 20 A17 17 0 1 1 38 20 Z"
+                    fill="url(#ptr)"
+                    stroke="rgba(0,0,0,0.25)"
+                    strokeWidth="2"
+                  />
+                  <circle cx="22" cy="19" r="5.5" fill="rgba(255,255,255,0.85)" />
+                </svg>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* side column */}
-          <div className="flex min-w-0 flex-col gap-6">
-            <Card>
-              <CardContent className="p-5">
-                <NameManager
-                  names={names}
-                  onAdd={addName}
-                  onRemove={removeName}
-                  onImport={importNames}
-                  onShuffle={shuffleNames}
-                  onSort={sortNames}
-                  onClear={clearNames}
-                />
-              </CardContent>
-            </Card>
+            <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-[560px]">
+              <button
+                onClick={names.length > 0 && !spinning ? spin : undefined}
+                disabled={spinning || names.length === 0}
+                className="w-full sm:w-auto px-6 py-3 text-base font-semibold rounded-xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 text-white shadow-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                {spinning ? "Spinning…" : "Spin"}
+              </button>
+              <button
+                onClick={() => setIdleSpin(!idleSpin)}
+                className="px-4 py-2 rounded-lg border border-border bg-surface hover:bg-accent/5 text-sm"
+              >
+                {idleSpin ? "Idle spin: ON" : "Idle spin: OFF"}
+              </button>
+            </div>
+          </section>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <History className="size-4 text-muted-foreground" aria-hidden="true" />
-                    Winners
-                  </CardTitle>
-                  {winners.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setWinners([])}
-                      className="h-7 px-2 text-xs text-muted-foreground"
-                      aria-label="Clear winners history"
-                    >
-                      <Trash2 className="size-3.5" />
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                <CardDescription className="sr-only">
-                  Recently picked winners
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+          {/* Right: Controls */}
+          <aside className="flex flex-col gap-6">
+            <NameManager names={names} onChange={setNames} />
+            
+            <section className="space-y-3">
+              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">History</h3>
+              <div className="max-h-64 overflow-y-auto space-y-1">
                 {winners.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    No spins yet — hit SPIN to crown a winner.
-                  </p>
+                  <p className="text-sm text-muted-foreground text-center py-4">No winners yet</p>
                 ) : (
-                  <ScrollArea className="max-h-64">
-                    <ul className="space-y-1 pb-1 pr-2.5">
-                      {winners.slice(0, 30).map((w, i) => (
-                        <li
-                          key={`${w.at}-${i}`}
-                          className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/60"
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-bold tabular-nums text-muted-foreground">
-                              {Math.min(i + 1, 30)}
-                            </span>
-                            <span className="truncate font-medium">{w.name}</span>
-                          </span>
-                          <time
-                            className="shrink-0 text-xs tabular-nums text-muted-foreground"
-                            dateTime={new Date(w.at).toISOString()}
-                          >
-                            {new Date(w.at).toLocaleTimeString(undefined, {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
-                          </time>
-                        </li>
-                      ))}
-                    </ul>
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                  winners.map((w, i) => (
+                    <div
+                      key={`${w.name}-${w.at}`}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface border border-border"
+                    >
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {winners.length - i}.
+                      </span>
+                      <span className="font-medium flex-1 truncate">{w.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(w.at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </section>
+
+            <div className="flex flex-wrap gap-2 pt-4 border-t">
+              <button
+                onClick={() => {
+                  if (confirm("Clear all names and history?")) {
+                    setNames([])
+                    setWinners([])
+                  }
+                }}
+                className="flex-1 px-3 py-2 rounded-lg border border-destructive text-destructive hover:bg-destructive/10 text-sm"
+              >
+                Clear All
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm("Clear winners history only?")) {
+                    setWinners([])
+                  }
+                }}
+                className="flex-1 px-3 py-2 rounded-lg border border-border text-foreground hover:bg-accent/5 text-sm"
+              >
+                Clear History
+              </button>
+            </div>
+          </aside>
         </div>
       </main>
 
-      <footer className="mt-auto border-t">
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-4 text-xs text-muted-foreground sm:px-6">
-          <span>Wheel of Names</span>
-          <span aria-hidden="true">·</span>
-          <span>Every spin is randomly seeded</span>
+      <footer className="border-t mt-auto">
+        <div className="mx-auto max-w-6xl px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
           <span aria-hidden="true">·</span>
           <span>Your names stay on this device</span>
         </div>
-      </footer>
+      </footer
 
       <WinnerDialog
         open={dialogOpen}
         winner={winner}
-        canRemoveWinner={canRemoveWinner}
+        canRemoveWinner={names.length > 1}
         onSpinAgain={spinAgain}
         onRemoveAndSpin={removeWinnerAndSpin}
         onClose={() => setDialogOpen(false)}
+        justWon={justWon}
       />
     </div>
   )
+}
+
+export default function WheelPage() {
+  return <WheelPage />
 }

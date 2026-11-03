@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import confetti from "canvas-confetti"
 import {
   Dialog,
@@ -30,7 +30,6 @@ interface WinnerDialogProps {
   onSpinAgain: () => void
   onRemoveAndSpin: () => void
   onClose: () => void
-  justWon?: boolean // Only fire confetti on actual win, not just dialog open
 }
 
 export function WinnerDialog({
@@ -40,14 +39,9 @@ export function WinnerDialog({
   onSpinAgain,
   onRemoveAndSpin,
   onClose,
-  justWon = false,
 }: WinnerDialogProps) {
-  const hasFired = useRef(false)
-
   useEffect(() => {
-    if (!open || !winner || !justWon || hasFired.current) return
-    hasFired.current = true
-
+    if (!open || !winner) return
     const fire = () => {
       confetti({
         particleCount: 90,
@@ -74,20 +68,20 @@ export function WinnerDialog({
     fire()
     const again = setTimeout(fire, 650)
     return () => clearTimeout(again)
-  }, [open, winner, justWon])
+  }, [open, winner])
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader className="items-center text-center">
-          <div className="mx-auto grid size-16 place-items-center rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 shadow-lg">
+          <div className="mx-auto grid size-16 place-items-center rounded-full bg-amber-500 shadow-lg">
             <Trophy className="size-8 text-white" aria-hidden="true" />
           </div>
           <DialogTitle className="sr-only">Winner picked</DialogTitle>
-          <DialogDescription className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+          <DialogDescription className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
             The wheel has chosen
           </DialogDescription>
-          <p className="bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 bg-clip-text break-all text-4xl font-extrabold leading-tight text-transparent sm:text-5xl">
+          <p className="break-all text-4xl font-extrabold leading-tight text-rose-600 dark:text-rose-400 sm:text-5xl">
             {winner}
           </p>
         </DialogHeader>
@@ -99,11 +93,11 @@ export function WinnerDialog({
               onClick={onRemoveAndSpin}
             >
               <UserMinus className="size-4" />
-              Remove winner & spin again
+              Remove winner &amp; spin again
             </Button>
           )}
           <Button
-            className="w-full bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 text-white shadow-md hover:opacity-90"
+            className="w-full bg-rose-600 text-white shadow-md hover:bg-rose-700"
             onClick={onSpinAgain}
           >
             <RotateCw className="size-4" />

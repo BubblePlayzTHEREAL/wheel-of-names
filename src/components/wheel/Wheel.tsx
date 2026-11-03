@@ -187,13 +187,16 @@ export function Wheel({
         ctx.arc(cx, cy, r, 0, TAU)
         ctx.fillStyle = dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"
         ctx.fill()
-        ctx.fillStyle = dark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.4)"
+        ctx.fillStyle = dark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.55)"
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
-        ctx.font = `600 ${Math.max(15, size * 0.034)}px system-ui, sans-serif`
-        ctx.fillText("The wheel is empty", cx, cy - size * 0.02)
-        ctx.font = `400 ${Math.max(12, size * 0.024)}px system-ui, sans-serif`
-        ctx.fillText("Add names to get started", cx, cy + size * 0.035)
+        const big = Math.max(15, size * 0.034)
+        const small = Math.max(12, size * 0.024)
+        const emptyY = cy - Math.max(14, r * 0.13) - big * 2.7
+        ctx.font = `600 ${big}px system-ui, sans-serif`
+        ctx.fillText("The wheel is empty", cx, emptyY)
+        ctx.font = `400 ${small}px system-ui, sans-serif`
+        ctx.fillText("Add names to get started", cx, emptyY + big * 1.5)
       } else {
         const segAngle = TAU / count
         for (let i = 0; i < count; i++) {

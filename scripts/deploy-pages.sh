@@ -9,6 +9,9 @@ REPO="BubblePlayzTHEREAL/wheel-of-names"
 : "${GITHUB_TOKEN:?Set GITHUB_TOKEN to a PAT with repo scope}"
 
 npm ci --no-audit --no-fund
+# Project pages are served from /wheel-of-names/, so the build needs the
+# matching basePath (Vercel builds don't set this and serve from the root).
+export NEXT_PUBLIC_BASE_PATH="/wheel-of-names"
 NEXT_TELEMETRY_DISABLED=1 npm run build
 touch out/.nojekyll
 
